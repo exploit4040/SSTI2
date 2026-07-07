@@ -158,7 +158,7 @@ request → request.application → application.__globals__ → __builtins__ →
 | `\|attr('read')()` | `.read()` | Lit la sortie de la commande |
 
 **Résultat :** Liste complète des fichiers du répertoire courant, incluant le fichier `flag`.
-<img width="1920" height="1009" alt="image" src="https://github.com/user-attachments/assets/9556bd05-e63b-4ac4-86a0-21d81334ce4c" />
+<img width="1915" height="1001" alt="image" src="https://github.com/user-attachments/assets/432b4bde-e910-4669-9189-e94de70b5806" />
 
 
 ### 5.2. Lecture du flag
