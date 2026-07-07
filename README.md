@@ -14,12 +14,17 @@
 **Server-Side Template Injection (SSTI)** est une vulnérabilité qui se produit lorsqu'un attaquant injecte du code malveillant dans un template côté serveur, et que ce code est exécuté par le moteur de templating. Les moteurs de templates (comme Jinja2, Twig, Freemarker, etc.) permettent aux développeurs de générer du HTML dynamique en combinant des données utilisateur avec des modèles prédéfinis. Si les entrées utilisateur ne sont pas correctement assainies, un attaquant peut exécuter des commandes systèmes arbitraires, lire des fichiers sensibles, ou prendre le contrôle du serveur.
 
 Dans notre cas, l'application utilise **Flask avec Jinja2** (le moteur de template par défaut de Flask), un framework Python très populaire pour les applications web.
+<img width="726" height="776" alt="image" src="https://github.com/user-attachments/assets/6828ee60-aff0-4e6c-a575-7591f1d5a8da" />
+
 
 ---
 
 ## 2. Analyse de l'application
 
 En accédant à l'instance, on découvre un site web qui permet aux utilisateurs de "s'annoncer" — une fonctionnalité de prise de parole publique. L'interface affiche les messages saisis. Le comportement suspect est immédiat : le site semble réafficher notre entrée, ce qui suggère qu'elle est passée dans un template.
+
+<img width="817" height="418" alt="image" src="https://github.com/user-attachments/assets/8e7a0644-3060-4775-aea9-a9f3b4962fc4" />
+
 
 ### 2.1. Reconnaissance — Détection de la SSTI
 
@@ -30,14 +35,19 @@ Première étape de tout pentest SSTI : injecter une expression mathématique si
 ```jinja2
 {{7*7}}
 ```
+<img width="646" height="317" alt="image" src="https://github.com/user-attachments/assets/c47a32d6-14de-47c7-93ba-c83e50ef93da" />
+
 
 **Résultat :** `49` — Le serveur a exécuté la multiplication. Confirmation immédiate de la présence d'une SSTI. La syntaxe `{{ }}` est caractéristique de **Jinja2** (Python).
+<img width="1257" height="569" alt="image" src="https://github.com/user-attachments/assets/25486a6b-ba3f-4eac-a51a-0a7c566de585" />
 
 Pour confirmer le moteur :
 
 ```jinja2
 {{ 10 * "10" }}
 ```
+<img width="658" height="308" alt="image" src="https://github.com/user-attachments/assets/9a78711d-a27d-4e06-b62b-deca0a6cc87c" />
+<img width="1734" height="514" alt="image" src="https://github.com/user-attachments/assets/5ed1e21f-b77c-4b3e-b668-6b60b63a03ff" />
 
 **Résultat :** `10101010101010101010` — Jinja2 multiplie une chaîne en la répétant, ce qui confirme qu'il s'agit bien de Jinja2/Flask.
 
@@ -51,7 +61,9 @@ Fort de cette confirmation, essayons un payload SSTI classique pour exécuter de
 {{config.__class__.__init__.__globals__['os'].popen('ls').read()}}
 ```
 
+
 **Réponse du serveur :**
+![Uploading image.png…]()
 
 > Stop trying to break me >:(
 
