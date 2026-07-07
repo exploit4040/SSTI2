@@ -62,7 +62,8 @@ Fort de cette confirmation, essayons un payload SSTI classique pour exécuter de
 ```
 
 
-**Réponse du serveur :**   <img width="1784" height="623" alt="image" src="https://github.com/user-attachments/assets/e1316973-b92c-425d-914c-376e58cb1b54" />
+**Réponse du serveur :**   <img width="1920" height="612" alt="image" src="https://github.com/user-attachments/assets/d9094398-c7db-4f32-9ce1-a71b7c34753e" />
+
 
 
 > Stop trying to break me >:(
